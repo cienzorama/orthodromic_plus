@@ -1,0 +1,2427 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+
+        <title>Babylon.js sample code</title>
+
+        <!-- Babylon.js -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.6.2/dat.gui.min.js"></script>
+        <script src="https://assets.babylonjs.com/generated/Assets.js"></script>
+        <script src="https://preview.babylonjs.com/ammo.js"></script>
+        <script src="https://preview.babylonjs.com/cannon.js"></script>
+        <script src="https://preview.babylonjs.com/Oimo.js"></script>
+        <script src="https://preview.babylonjs.com/earcut.min.js"></script>
+        <script src="https://preview.babylonjs.com/babylon.js"></script>
+        <script src="https://preview.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
+        <script src="https://preview.babylonjs.com/proceduralTexturesLibrary/babylonjs.proceduralTextures.min.js"></script>
+        <script src="https://preview.babylonjs.com/postProcessesLibrary/babylonjs.postProcess.min.js"></script>
+        <script src="https://preview.babylonjs.com/loaders/babylonjs.loaders.js"></script>
+        <script src="https://preview.babylonjs.com/serializers/babylonjs.serializers.min.js"></script>
+        <script src="https://preview.babylonjs.com/gui/babylon.gui.min.js"></script>
+        <script src="https://preview.babylonjs.com/inspector/babylon.inspector.bundle.js"></script>
+
+        <style>
+            html, body {
+                overflow: hidden;
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+
+            #renderCanvas {
+                width: 100%;
+                height: 100%;
+                touch-action: none;
+            }
+        </style>
+    </head>
+<body>
+    <canvas id="renderCanvas"></canvas>
+    <script>
+        var canvas = document.getElementById("renderCanvas");
+
+        var startRenderLoop = function (engine, canvas) {
+            engine.runRenderLoop(function () {
+                if (sceneToRender && sceneToRender.activeCamera) {
+                    sceneToRender.render();
+                }
+            });
+        }
+
+        var engine = null;
+        var scene = null;
+        var sceneToRender = null;
+        var createDefaultEngine = function() { return new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true,  disableWebGL2Support: false}); };
+        //|-----------------------------------------|
+//| Representación interactiva de rutas     |
+//| de distancia mínima y rumbo constante   |
+//| sobre La Tierra y la "tierra plana"     |
+//|                                         |
+//| v0.51kc   14/09/2022                    |
+//| (variante neón o puticlub de carretera) |
+//|                                         |
+//|         cienzorama@gmail.com            |
+//|-----------------------------------------|
+
+//Datos de las líneas sobre
+//la esfera y la tierra plana
+//Ortodrómicas
+line_data=[];
+line_data_fe=[];
+//Loxodrímicas
+line_data_lox=[];
+line_data_lox_fe=[];
+//Flatodrómicas
+line_data_flat_sp=[];
+line_data_flat_fe=[];
+//Equiangular
+line_data_eqac_sp=[];
+line_data_eqac_fe=[];
+
+//Posición de los controles
+pos1=[];
+pos2=[];
+pos3=[];
+pos4=[];
+
+//Numero de divisiones de cada línea
+ndiv=200;
+
+//Radio de la esfera
+r=10;
+
+//Factores de escala mínimos y máximos 
+//para el tamaño del disco.
+//En el mínimo (=1), el radio del disco
+//es igual a 2 radios terrestres, manteniendo
+//el tamaño del ecuador.
+//En el máximo (=pi/2), el radio del disco
+//es igual al tamaño del meridiano de polo a polo
+//de la esfera
+sfe_min=1.0;
+sfe_max=0.5*Math.PI;
+
+//Factor de escala y tamaño del
+//disco seleccionado
+sfe=sfe_max*1.0;
+rfe=sfe*r;
+//Copia del factor de escala inicial
+sfe0=sfe*1.0;
+
+//Tamaño de las esferas
+//roja y azul
+handler_radius=r/8.0;
+
+//Altura de las líneas 
+//sobre la tierra plana
+height_fe=rfe/20.0;
+
+//Radio visual de las líneas
+//sobre la esfera
+deltar=1.02;
+rdeltar=r*deltar;
+
+//Radio de la La Tierra
+earth_radius=6371.0;
+
+//Factores de escala
+factor_de_escala_sp=earth_radius/(rdeltar);
+factor_de_escala_fe=sfe*earth_radius/rfe;
+//Máxima latitud permitida respecto a +-pi/2
+max_lat=0.99999;
+
+//Factor de conversión
+//de grados a radianes
+dtor=Math.PI/180.0;
+
+//Color de las líneas
+line_color_orto=new BABYLON.Color3(0,1,0);
+line_color_loxo=new BABYLON.Color3(1,0,0);
+line_color_flat=new BABYLON.Color3(1,1,0);
+line_color_eqac=new BABYLON.Color3(0,1,1);
+
+//Posición del centro de la esfera y el disco
+zero=new BABYLON.Vector3(0,0,0);
+fe_pos=new BABYLON.Vector3(0,0,-4*rfe);
+
+//Distancias
+distancia_sp=0;
+distancia_sp_suma=0;
+distancia_fe_suma=0;
+distancia_sp_lox=0;
+distancia_sp_lox_suma=0;
+distancia_fe_lox_suma=0;
+distancia_sp_flat_suma=0;
+distancia_fe_flat_suma=0;
+distancia_sp_eqac_suma=0;
+distancia_fe_eqac_suma=0;
+
+dist_orto=[];
+dist_loxo=[];
+dist_flat=[];
+dist_eqac=[];
+dist_orto_fe=[];
+dist_loxo_fe=[];
+dist_flat_fe=[];
+dist_eqac_fe=[];
+
+
+//Visibilidad de las líneas
+orto_es_visible=1;
+loxo_es_visible=1;
+flato_es_visible=1;
+eqac_es_visible=1;
+
+//Línea seleccionada para información
+info_orto=0;
+info_loxo=0;
+info_flat=0;
+info_eqac=0;
+
+//Opción para mantener
+//la distancia ortodrómica constante
+keep_orto_dist=0;
+
+//Selección de modelo
+sp_sel=1;
+fe_sel=0;
+
+//Cambio de posición
+change_pos=0;
+
+//Sensibilidad del ratón
+mouse_sense=1.0;
+
+//Función de Gudermann
+var gdf=function(xx) {
+    return Math.atan(Math.sinh(xx));
+}
+
+//Función de Gudermann inversa
+var agdf=function(xx) {
+    return Math.atanh(Math.sin(xx));
+}
+
+//Transformación a coordenadas cartersianas
+//sobre la esfera
+var rlatlon_to_xyz=function(fun_r,fun_lat,fun_lon) {
+
+    var fun_x=fun_r*Math.cos(fun_lon)*Math.cos(fun_lat);
+    var fun_z=fun_r*Math.sin(fun_lon)*Math.cos(fun_lat);
+    var fun_y=fun_r*Math.sin(fun_lat);
+
+    var fun_v=new BABYLON.Vector3(fun_x,fun_y,fun_z);
+    return fun_v;
+}
+
+//Transformación a coordenadas cartersianas
+//sobre la tierra plana
+var rlatlon_to_xyz_fe=function(fun_r,fun_lat,fun_lon) {
+
+    var fun_arg=2*fun_r*(-fun_lat+Math.PI/2)/Math.PI;
+    var fun_v1x=fe_pos.x+Math.cos(fun_lon)*fun_arg;
+    var fun_v1y=fe_pos.y+height_fe;
+    var fun_v1z=fe_pos.z+Math.sin(fun_lon)*fun_arg;
+
+    fun_v1fe=new BABYLON.Vector3(fun_v1x,fun_v1y,fun_v1z);
+    return fun_v1fe;
+}
+
+//Cálculo de la ortodrómica, loxodrómica,
+//flatodrómica y equiangular y proyección
+//sobre la esfera y la tierra plana
+var calculate_lines=function() {
+
+    //Vectores de posición sobre la esfera
+    var v1=pos1.subtract(zero);
+    var v2=pos2.subtract(zero);
+
+    v1.normalize();
+    v2.normalize();
+
+    var v1v2=v1.x*v2.x+v1.y*v2.y+v1.z*v2.z;
+
+    //Cálculos ortodrómicos
+    //Ángulo entre ambas posiciones
+    var angulo=Math.acos(v1v2);
+    distancia_sp=angulo*earth_radius;
+    
+    //Cálculo del plano que contiene
+    //Las posiciones y el centro
+    var h=v1.cross(v2);
+    h.normalize();
+
+    //Eje accesorio
+    var v2p=h.cross(v1);
+    v2p.normalize();
+
+    //Cálculos de loxodrómicos
+    var lat01=Math.asin(v1.y);
+    var lon01=Math.atan2(v1.z,v1.x);
+    var lat02=Math.asin(v2.y);
+    var lon02=Math.atan2(v2.z,v2.x);
+
+    //Diferencia de latitud y longitud
+    //entre las posiciones inicial y final
+    delta_lat=lat02-lat01;
+    delta_lon=lon02-lon01;
+
+    //Acotación  y corrección 
+    //de la diferencia en longitud
+    dl=delta_lon;
+    if (delta_lon>Math.PI) dl=-(2*Math.PI-delta_lon);
+    if (delta_lon<-Math.PI) dl=2*Math.PI+delta_lon;    
+    delta_lon=dl;
+
+    //Cálculo del rumbo loxodrómico
+    //basado en la función de Gundermann
+    var bear=Math.atan2(delta_lon,(agdf(lat02)-agdf(lat01)));
+
+    //Cálculos flatodrómicos
+    //Vectore de posición de los puntos
+    v1fe=rlatlon_to_xyz_fe(rfe,lat01,lon01);
+    v2fe=rlatlon_to_xyz_fe(rfe,lat02,lon02);
+
+    //Distancia mínima entre los puntos
+    //en la tierra plana
+    dist_fe=BABYLON.Vector3.Distance(v1fe,v2fe);
+    dv=v2fe.subtract(v1fe);
+    dv.normalize();
+
+    //Cálculos equiangulares
+    //Transformación de los puntos sobre la tierra
+    //plana a coordenadas polares
+    pr1=2*rfe*(-lat01+Math.PI/2)/Math.PI;
+    pt1=lon01;
+
+    pr2=2*rfe*(-lat02+Math.PI/2)/Math.PI;
+    pt2=lon02;
+
+    //Constantes de la espiral equiangular
+    p_especial=0;
+    p_beta=Math.log(pr2/pr1)/(delta_lon);
+    p_alpha=pr1/Math.exp(p_beta*pt1);
+    if (pr1==pr2) p_beta=0;
+    if (pt1==pt2) p_especial=1;
+
+    
+    //Borra los cálculos anteriores de distancia
+    //usando segmentos
+    distancia_sp_suma=0;
+    distancia_fe_suma=0;
+    distancia_sp_lox_suma=0;
+    distancia_fe_lox_suma=0;
+    distancia_fe_flat_suma=0;
+    distancia_sp_flat_suma=0;
+    distancia_sp_eqac_suma=0;
+    distancia_fe_eqac_suma=0;
+
+    es_posible_calc_dist_fe=1;
+    for (var i=0;i<ndiv+1;i++) {
+
+        var inc=i/(ndiv*1.0);
+
+        //Línea ortodrómica sobre la esfera
+        ang1=angulo*inc;
+
+        cos_ang1=Math.cos(ang1);
+        sin_ang1=Math.sin(ang1);
+
+        dx=rdeltar*(v1.x*cos_ang1+v2p.x*sin_ang1);
+        dy=rdeltar*(v1.y*cos_ang1+v2p.y*sin_ang1);
+        dz=rdeltar*(v1.z*cos_ang1+v2p.z*sin_ang1);
+
+        line_data[i]=new BABYLON.Vector3(dx,dy,dz);
+
+
+        //Línea ortodrómica sobre la tierra plana        
+        var lat_sp=Math.asin(dy/(rdeltar));
+        var lon_sp=Math.atan2(dz,dx);
+
+        //Si la línea pasa cerca de la latitud -90º
+        //se indica que el cálculo de la distancia
+        //en la tierra plana carece de sentido
+        if (lat_sp<-Math.PI/2*0.98) es_posible_calc_dist_fe=0;
+
+        line_data_fe[i]=rlatlon_to_xyz_fe(rfe,lat_sp,lon_sp);
+        
+        if (lat_sp<-Math.PI/2*0.98 && i>0 && i<ndiv)  line_data_fe[i]=new BABYLON.Vector3(NaN,NaN,NaN);
+        
+
+        //Línea loxodrómica sobre la esfera
+        var lon_sp2=lon01+delta_lon*inc;
+        var lat_sp2=gdf(agdf(lat01)+(1/Math.tan(bear))*delta_lon*inc);
+
+        line_data_lox[i]=rlatlon_to_xyz(rdeltar,lat_sp2,lon_sp2);
+        line_data_lox_fe[i]=rlatlon_to_xyz_fe(rfe,lat_sp2,lon_sp2);
+
+
+        //Línea flatodrómica sobre la tierra plana
+        dx4=v1fe.x+dv.x*dist_fe*inc;  
+        dy4=v1fe.y+dv.y*dist_fe*inc;
+        dz4=v1fe.z+dv.z*dist_fe*inc;
+        
+        line_data_flat_fe[i]=new BABYLON.Vector3(dx4,dy4,dz4);
+
+
+        //Línea flatodrómica sobre la esfera
+        dc=BABYLON.Vector3.Distance(fe_pos,new BABYLON.Vector3(dx4,0,dz4));
+        lat_sp3=Math.PI*(0.5-dc/(2*rfe));
+        dx5=dx4-fe_pos.x;
+        dz5=dz4-fe_pos.z;
+        lon_sp3=Math.atan2(dz5,dx5);
+
+        line_data_flat_sp[i]=rlatlon_to_xyz(rdeltar,lat_sp3,lon_sp3);
+
+
+        //Línea equiangular sobre la tierra plana
+        pt3=pt1+delta_lon*inc;
+        pr3=p_alpha*Math.exp(p_beta*pt3);
+        if (p_especial==1) pr3=pr1+(pr2-pr1)*inc;
+
+        var dx7=fe_pos.x+pr3*Math.cos(pt3);
+        var dy7=fe_pos.y+fe_pos.y+height_fe;
+        var dz7=fe_pos.z+pr3*Math.sin(pt3);
+
+        line_data_eqac_fe[i]=new BABYLON.Vector3(dx7,dy7,dz7);
+
+
+        //Línea equiangular sobre la esfera
+        dc2=BABYLON.Vector3.Distance(fe_pos,new BABYLON.Vector3(dx7,0,dz7));
+        lat_sp4=Math.PI*(0.5-dc2/(2*rfe));
+        dx8=dx7-fe_pos.x;
+        dz8=dz7-fe_pos.z;
+        lon_sp4=Math.atan2(dz8,dx8);
+
+        line_data_eqac_sp[i]=rlatlon_to_xyz(rdeltar,lat_sp4,lon_sp4);
+
+
+        //Distancias calculadas mediante suma de segmentos
+        if (i>0) {
+
+            distancia_sp_suma+=BABYLON.Vector3.Distance(line_data[i-1],line_data[i])
+            distancia_fe_suma+=BABYLON.Vector3.Distance(line_data_fe[i-1],line_data_fe[i]);
+            distancia_sp_lox_suma+=BABYLON.Vector3.Distance(line_data_lox[i-1],line_data_lox[i])
+            distancia_fe_lox_suma+=BABYLON.Vector3.Distance(line_data_lox_fe[i-1],line_data_lox_fe[i]);
+            distancia_fe_flat_suma+=BABYLON.Vector3.Distance(line_data_flat_fe[i-1],line_data_flat_fe[i]);
+            distancia_sp_flat_suma+=BABYLON.Vector3.Distance(line_data_flat_sp[i-1],line_data_flat_sp[i]);
+            distancia_fe_eqac_suma+=BABYLON.Vector3.Distance(line_data_eqac_fe[i-1],line_data_eqac_fe[i]);
+            distancia_sp_eqac_suma+=BABYLON.Vector3.Distance(line_data_eqac_sp[i-1],line_data_eqac_sp[i]);
+
+            dist_orto[i]=distancia_sp_suma*factor_de_escala_sp;
+            dist_loxo[i]=distancia_sp_lox_suma*factor_de_escala_sp;
+            dist_flat[i]=distancia_sp_flat_suma*factor_de_escala_sp;
+            dist_eqac[i]=distancia_sp_eqac_suma*factor_de_escala_sp;
+
+            dist_orto_fe[i]=distancia_fe_suma*factor_de_escala_fe;
+            dist_loxo_fe[i]=distancia_fe_lox_suma*factor_de_escala_fe;
+            dist_flat_fe[i]=distancia_fe_flat_suma*factor_de_escala_fe;
+            dist_eqac_fe[i]=distancia_fe_eqac_suma*factor_de_escala_fe;
+
+        }
+    }
+
+    dist_orto[0]=0;
+    dist_loxo[0]=0;
+    dist_flat[0]=0;
+    dist_eqac[0]=0;
+    dist_orto_fe[0]=0;
+    dist_loxo_fe[0]=0;
+    dist_flat_fe[0]=0;
+    dist_eqac_fe[0]=0;
+    
+
+    //Escalado de las distancias
+    distancia_sp_suma*=factor_de_escala_sp;
+    distancia_fe_suma*=factor_de_escala_fe;
+    distancia_sp_lox_suma*=factor_de_escala_sp;
+    distancia_fe_lox_suma*=factor_de_escala_fe;
+    distancia_sp_flat_suma*=factor_de_escala_sp;
+    distancia_fe_flat_suma*=factor_de_escala_fe;
+    distancia_fe_eqac_suma*=factor_de_escala_fe;
+    distancia_sp_eqac_suma*=factor_de_escala_sp;
+
+    //Correción de distancias para el método
+    //basado en suma de segmentos
+    //(innecesario si ndiv>1000)
+    distancia_sp_suma=distancia_sp;
+    if (lat01!=lat02) {
+        var distancia_loxo_real=earth_radius*(lat02-lat01)/Math.cos(bear);
+    } else {
+        var distancia_loxo_real=suma=earth_radius*(delta_lon)*Math.cos(lat1);
+    }
+
+    var distancia_orto_real=distancia_sp;
+    var corrige_loxo=0;
+    if (distancia_sp>distancia_sp_lox_suma) corrige_loxo=1;
+
+    for (var i=0;i<ndiv+1;i++) {
+
+        dist_orto[i]=dist_orto[i]/distancia_sp_suma*distancia_orto_real;
+        
+        if (corrige_loxo==1) {
+            dist_loxo[i]=dist_loxo[i]/distancia_sp_lox_suma*distancia_orto_real;
+            dist_eqac[i]=dist_eqac[i]/distancia_sp_eqac_suma*distancia_orto_real;
+        }
+
+    }
+
+    if (corrige_loxo==1) {
+        distancia_sp_lox_suma=distancia_orto_real;
+        distancia_sp_eqac_suma=distancia_orto_real;
+    }
+
+    //Si el cálculo de distancia sobre la tierra plana carece de sentido
+    if (es_posible_calc_dist_fe==0) {
+        distancia_fe_suma=0;
+        //distancia_fe_lox_suma=0;
+    }
+    //Si el cálculo de distancia sobre la tierra plana
+    //tiene algún otro error
+    if (isNaN(distancia_fe_suma)) distancia_fe_suma=0;
+    if (isNaN(distancia_fe_lox_suma)) distancia_fe_lox_suma=0;
+    
+}
+
+
+var createScene = function () {
+
+    var scene = new BABYLON.Scene(engine);
+    scene.clearColor = new BABYLON.Color3(0.0, 0.0, 0.0);
+
+    //Cámara
+    var camera = new BABYLON.ArcRotateCamera("Camera", 0, 0, 10, zero, scene);
+    camera.setPosition(new BABYLON.Vector3(4*r, 0, 0));
+    camera.attachControl(canvas, true);
+    camera.radius=4*r;
+    camera.lowerRadiusLimit=2*r;
+    camera.upperRadiusLimit=8*r;
+
+    //Solo se permite el uso del botón izquierdo 
+    //del ratón
+    camera.inputs.attached.pointers.buttons = [0];
+
+    //Desactiva algunas funciones en pantallas táctiles
+    const input = camera.inputs.attached.pointers;
+	input.multiTouchPanAndZoom = false;
+	input.multiTouchPanning = false;
+
+
+    // Iluminación
+    var light = new BABYLON.PointLight("omni", new BABYLON.Vector3(0, 2000, 0), scene);
+
+
+    //Material de la esfera roja
+    var redMat = new BABYLON.StandardMaterial("rsph", scene);
+    redMat.diffuseColor = new BABYLON.Color3(0.4, 0.4, 0.4);
+    redMat.specularColor = new BABYLON.Color3(0.4, 0.4, 0.4);
+    redMat.emissiveColor = BABYLON.Color3.Red();
+    redMat.alpha=0.35;
+
+
+    //Material de la esfera azul
+    var blueMat = new BABYLON.StandardMaterial("bsph", scene);
+    blueMat.diffuseColor = new BABYLON.Color3(0.4, 0.4, 0.4);
+    blueMat.specularColor = new BABYLON.Color3(0.4, 0.4, 0.4);
+    blueMat.emissiveColor = BABYLON.Color3.Blue();
+    blueMat.alpha=0.35;
+
+
+    //Material de la esfera auxiliar
+    var auxMat = new BABYLON.StandardMaterial("asph", scene);
+    auxMat.diffuseColor = new BABYLON.Color3(0.4, 0.4, 0.4);
+    auxMat.specularColor = new BABYLON.Color3(0.4, 0.4, 0.4);
+    auxMat.emissiveColor = BABYLON.Color3.Green();
+    auxMat.alpha=0.5;
+
+
+    //Textura y material de La Tierra
+    //Baja resolución
+    //var url_em="https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/Whole_world_-_land_and_oceans.jpg/1024px-Whole_world_-_land_and_oceans.jpg";
+    //Media resolución
+    var url_em="https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/Whole_world_-_land_and_oceans.jpg/2560px-Whole_world_-_land_and_oceans.jpg";
+    var EarthMat = new BABYLON.StandardMaterial("earth", scene);
+    EarthMat.diffuseColor = new BABYLON.Color3(1, 1, 1);
+    EarthMat.emissiveColor = BABYLON.Color3.White();
+    EarthMat.backFaceCulling = true;
+    EarthMat.diffuseTexture = new BABYLON.Texture(url_em, scene);
+    EarthMat.diffuseTexture.uScale=-1;
+    EarthMat.diffuseTexture.vScale=-1;
+    EarthMat.specularColor = new BABYLON.Color3(0,0,0);
+    
+    //Textura y material de la tierra plana
+    var url_fem="https://upload.wikimedia.org/wikipedia/commons/7/79/Flat_earth.jpg";
+    var FlatEarthMat=new BABYLON.StandardMaterial("Flatearth", scene);
+    FlatEarthMat.diffuseTexture = new BABYLON.Texture(url_fem, scene);
+    FlatEarthMat.specularColor = new BABYLON.Color3(0,0,0);
+
+    //Esfera de La Tierra
+    var EarthSphere = BABYLON.MeshBuilder.CreateSphere("Earth", {diameter:2*r}, scene);
+    EarthSphere.material = EarthMat;
+    EarthSphere.position.y = 0;
+    EarthSphere.position.x = 0;
+    EarthSphere.isBlocker=true;
+					
+    //Rotación sobre el eje Y (arriba) de La Tierra                   
+    EarthSphere.rotation=new BABYLON.Vector3(0, 0, 0);
+    EarthSphere.rotate(BABYLON.Axis.Y, Math.PI, BABYLON.Space.WORLD);
+    EarthSphere.rotate(BABYLON.Axis.X, 0.0, BABYLON.Space.WORLD);
+    EarthSphere.rotate(BABYLON.Axis.Z, 0.0, BABYLON.Space.WORLD);
+
+    //Disco de La Tierra Plana como cilindro
+
+    //Coordenadas de textura (solo de la parte superior)
+    const faceUV = [];
+	faceUV[0] =	new BABYLON.Vector4(0, 0, 0, 0); //bottom
+    faceUV[1] =	new BABYLON.Vector4(0, 0, 0, 0); //side
+    faceUV[2] = new BABYLON.Vector4(0, 0, 1, 1); //top
+	
+    //Color del cilindro
+    const faceColors = [ ];
+    faceColors[0] = new BABYLON.Color4(0.5, 0.5, 0.5, 1)
+	
+    //Cilindro muy achatado (disco) para la tierra plana
+	var EarthDisk = BABYLON.MeshBuilder.CreateCylinder("FlatEarth", {height:rfe/20.0, tessellation: 60, diameter: 4*rfe,faceUV: faceUV, faceColors: faceColors});
+	EarthDisk.material = FlatEarthMat;
+
+    //Correción de rotación de la tierra plana
+    EarthDisk.rotation=new BABYLON.Vector3(0, 0, 0);
+    EarthDisk.rotate(BABYLON.Axis.Y, Math.PI*1.5, BABYLON.Space.WORLD);
+    EarthDisk.rotate(BABYLON.Axis.X, 0.0, BABYLON.Space.WORLD);
+    EarthDisk.rotate(BABYLON.Axis.Z, 0.0, BABYLON.Space.WORLD);
+
+    EarthDisk.position= fe_pos;
+
+
+    //Posiciones iniciales
+    lat1=40.0*dtor;
+    lon1=-4.0*dtor;
+
+    lat2=-34.0*dtor;
+    lon2=-61.1*dtor;
+
+    //Posiciones iniciales 
+    //de la plantilla de Guillermo M.
+    if (0) {
+
+        lat1=(33+32/60.0+24.98/3600.0)*dtor;
+        lon1=-(41+5/60.0+53.77/3600.0)*dtor;
+
+        lat2=(21+4/60.0+7.35/3600.0)*dtor;
+        lon2=-(146+38/60.0+34.77/3600.0)*dtor;
+    }
+
+
+    //Esfera roja
+    pos1=rlatlon_to_xyz(r,lat1,lon1);
+
+    var redSphere = BABYLON.MeshBuilder.CreateSphere("red", {diameter:handler_radius}, scene);
+    redSphere.material = redMat;
+    redSphere.position=pos1;
+
+
+    //Esfera azul
+    pos2=rlatlon_to_xyz(r,lat2,lon2);
+
+    var blueSphere = BABYLON.MeshBuilder.CreateSphere("blue", {diameter: handler_radius}, scene);
+    blueSphere.material = blueMat;
+    blueSphere.position=pos2;
+
+    
+    //Esfera roja sobre la tierra plana
+    pos3=rlatlon_to_xyz_fe(rfe,lat1,lon1);
+    var redSphere_fe = BABYLON.MeshBuilder.CreateSphere("red_fe", {diameter:handler_radius}, scene);
+    redSphere_fe.material = redMat;
+    redSphere_fe.position=pos3;
+
+
+    //Esfera azul sobre la tierra plana
+    pos4=rlatlon_to_xyz_fe(rfe,lat2,lon2);
+    var blueSphere_fe = BABYLON.MeshBuilder.CreateSphere("blue_fe", {diameter:handler_radius}, scene);
+    blueSphere_fe.material = blueMat;
+    blueSphere_fe.position=pos4;
+
+
+    //Esfera auxiliar
+    var auxSphere = BABYLON.MeshBuilder.CreateSphere("aux ", {diameter:handler_radius*0.5}, scene);
+    auxSphere.material = auxMat;
+    auxSphere.position=zero;
+    
+
+    //Cálculo de las líneas
+    calculate_lines();
+
+    //Línea otrodrómica sobre la esfera
+    ortodromic_line =BABYLON.Mesh.CreateLines ( "ortodromic_line", line_data,scene,true); 
+    ortodromic_line.color = line_color_orto;
+    
+    //Línea orotodrímica proyectada sobre la tierra plana
+    ortodromic_line_fe =BABYLON.Mesh.CreateLines ( "ortodromic_line_fe", line_data_fe,scene,true); 
+    ortodromic_line_fe.color = line_color_orto;
+
+    //Línea loxodrómica sobre la esfera
+    loxodromic_line =BABYLON.Mesh.CreateLines ( "loxodromic_line", line_data_lox,scene,true); 
+    loxodromic_line.color = line_color_loxo;
+
+    //Línea loxodrómica proyectada sobre la tierra plana
+    loxodromic_line_fe =BABYLON.Mesh.CreateLines ( "loxodromic_line", line_data_lox_fe,scene,true); 
+    loxodromic_line_fe.color = line_color_loxo;
+
+    //Línea flatodromica sobre la tierra plana
+    flatodromic_line_fe =BABYLON.Mesh.CreateLines ( "flatodromic_line", line_data_flat_fe,scene,true); 
+    flatodromic_line_fe.color = line_color_flat;
+
+    //Línea flatodromica sobre la esfera
+    flatodromic_line_sp =BABYLON.Mesh.CreateLines ( "flatodromic_line", line_data_flat_sp,scene,true); 
+    flatodromic_line_sp.color = line_color_flat;
+
+    //Línea equiangular sobre la tierra plana
+    equiangular_line_fe =BABYLON.Mesh.CreateLines ( "equiangular_line", line_data_eqac_fe,scene,true); 
+    equiangular_line_fe.color = line_color_eqac;
+
+    //Línea equiangular sobre la esfera
+    equiangular_line_sp =BABYLON.Mesh.CreateLines ( "equiangular_line", line_data_eqac_sp,scene,true); 
+    equiangular_line_sp.color = line_color_eqac;
+    
+
+    //Efecto neón para las líneas
+    var glo = new BABYLON.GlowLayer("glow_effect", scene, {
+        blurKernelSize: 30
+    });
+    //glo.addExcludedMesh(EarthSphere);
+    //glo.addExcludedMesh(EarthDisc);
+    glo.addExcludedMesh(redSphere);
+    glo.addExcludedMesh(blueSphere);
+    glo.intensity = 2;
+    var glow_factor=1.0;
+    
+    glo.customEmissiveColorSelector = (mesh, subMesh, material, result) => {
+        if (mesh == ortodromic_line || mesh == ortodromic_line_fe) {
+            result.r = line_color_orto.r*glow_factor;
+            result.g = line_color_orto.g*glow_factor;
+            result.b = line_color_orto.b*glow_factor;
+
+        } else if (mesh == loxodromic_line || mesh == loxodromic_line_fe) {
+            result.r = line_color_loxo.r*glow_factor;
+            result.g = line_color_loxo.g*glow_factor;
+            result.b = line_color_loxo.b*glow_factor;
+
+        } else if (mesh==flatodromic_line_fe || mesh == flatodromic_line_sp) {
+            result.r = line_color_flat.r*glow_factor;
+            result.g = line_color_flat.g*glow_factor;
+            result.b = line_color_flat.b*glow_factor;
+
+        } else if (mesh==equiangular_line_fe || mesh == equiangular_line_sp) {
+            result.r = line_color_eqac.r*glow_factor;
+            result.g = line_color_eqac.g*glow_factor;
+            result.b = line_color_eqac.b*glow_factor;
+
+        } else {
+            result.r=0;
+            result.g=0;
+            result.b=0;
+        }
+    }
+    
+
+    //Punto de inicio y 
+    //objeto seleccionado
+    var startingPoint;
+    var currentMesh;
+    
+
+    //GUI--------------------------------------------------------
+
+    var advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
+	
+    var al_left=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+    var al_top=BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+
+    //Cuadro de datos
+    var data_rect = new BABYLON.GUI.Rectangle();
+    data_rect.width = "310px";
+    data_rect.height = "116px";
+    data_rect.cornerRadius = 10;
+    data_rect.color = "black";
+    data_rect.thickness = 4;
+    data_rect.background = "black";
+    data_rect.top="0%";
+    data_rect.left="0%";
+    data_rect.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+    data_rect.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
+    data_rect.alpha=0.6;
+    data_rect.isVisible=1;		
+    advancedTexture.addControl(data_rect);
+
+    //Texto de datos: distancias
+    var data_text_1 = new BABYLON.GUI.TextBlock();
+    data_text_1.text="            ~ DISTANCES(km)\n"+
+                     "\n"+
+                     " ORTHODROMIC  "+ ("00"+(Math.round(distancia_sp)).toString()).slice(-5) + "   "
+                                    + ("00"+(Math.round(distancia_fe_suma)).toString()).slice(-5) + "\n"+
+                     " LOXODROMIC   "+ ("00"+(Math.round(distancia_sp_lox_suma)).toString()).slice(-5) + "   "
+                                    + ("00"+(Math.round(distancia_fe_lox_suma)).toString()).slice(-5) + "\n"+
+                     " FLATODROMIC  "+ ("00"+(Math.round(distancia_sp_flat_suma)).toString()).slice(-5) + "   "
+                                    + ("00"+(Math.round(distancia_fe_flat_suma)).toString()).slice(-5) + "\n"+
+                     " EQUIANGULAR  "+ ("00"+(Math.round(distancia_sp_eqac_suma)).toString()).slice(-5) + "   "
+                                    + ("00"+(Math.round(distancia_fe_eqac_suma)).toString()).slice(-5);
+
+
+    data_text_1.color = "white";
+    data_text_1.fontSize = 14;
+    data_text_1.top="0%";
+    data_text_1.horizontalAlignment = al_left;
+    data_text_1.verticalAlignment  = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
+    data_text_1.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    data_text_1.fontFamily = 'monospace';
+    data_rect.addControl(data_text_1);
+
+
+    color_mark_global_left=230+10;
+
+    //Texto de datos: v
+    var data_text_v = new BABYLON.GUI.TextBlock();
+    data_text_v.text="v"
+    data_text_v.color = "white";
+    data_text_v.fontSize = 14;
+    data_text_v.top="-26px";
+    data_text_v.left=color_mark_global_left+2;
+    data_text_v.horizontalAlignment = al_left;
+    data_text_v.verticalAlignment  = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
+    data_text_v.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    data_text_v.fontFamily = 'monospace';
+    data_rect.addControl(data_text_v);
+
+    //Control de visibilidad de la línea ortodrómica
+    var color_mark_o = new BABYLON.GUI.Rectangle("");
+    color_mark_o.color = line_color_orto.toHexString();
+    color_mark_o.background = line_color_orto.toHexString();
+    color_mark_o.height="12px";
+    color_mark_o.width="12px";
+    color_mark_o.top="41px";
+    color_mark_o.left=color_mark_global_left;
+    color_mark_o.cornerRadius = 1;
+    color_mark_o.thickness = 1;
+    color_mark_o.horizontalAlignment = al_left;
+    color_mark_o.verticalAlignment = al_top;
+    color_mark_o.textHorizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    color_mark_o.fontFamily = 'monospace';
+    color_mark_o.onPointerClickObservable.add (function() {
+
+        if (orto_es_visible==1) {
+
+            orto_es_visible=0;
+            color_mark_o.background="black";
+            ortodromic_line.isVisible=orto_es_visible;
+            ortodromic_line_fe.isVisible=orto_es_visible;
+
+        } else {
+
+            orto_es_visible=1;
+            color_mark_o.background=line_color_orto.toHexString();
+            ortodromic_line.isVisible=orto_es_visible;
+            ortodromic_line_fe.isVisible=orto_es_visible;
+
+        }
+
+    });
+    data_rect.addControl(color_mark_o);
+
+    //Control de visibilidad de la línea loxodrómica
+    var color_mark_l = new BABYLON.GUI.Rectangle("");
+    color_mark_l.color = line_color_loxo.toHexString();
+    color_mark_l.background = line_color_loxo.toHexString();
+    color_mark_l.height="12px";
+    color_mark_l.width="12px";
+    color_mark_l.top="58px";
+    color_mark_l.left=color_mark_global_left;
+    color_mark_l.cornerRadius = 1;
+    color_mark_l.thickness = 1;
+    color_mark_l.horizontalAlignment = al_left;
+    color_mark_l.verticalAlignment = al_top;
+    color_mark_l.textHorizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    color_mark_l.fontFamily = 'monospace';
+    color_mark_l.onPointerClickObservable.add (function() {
+
+        if (loxo_es_visible==1) {
+
+            loxo_es_visible=0;
+            color_mark_l.background="black";
+            loxodromic_line.isVisible=loxo_es_visible;
+            loxodromic_line_fe.isVisible=loxo_es_visible;
+
+        } else {
+
+            loxo_es_visible=1;
+            color_mark_l.background=line_color_loxo.toHexString();
+            loxodromic_line.isVisible=loxo_es_visible;
+            loxodromic_line_fe.isVisible=loxo_es_visible;
+
+        }
+
+    });
+    data_rect.addControl(color_mark_l);
+
+    //Control de visibilidad de la línea flatodrómica
+    var color_mark_f = new BABYLON.GUI.Rectangle("");
+    color_mark_f.color = line_color_flat.toHexString();
+    color_mark_f.background = line_color_flat.toHexString();
+    color_mark_f.height="12px";
+    color_mark_f.width="12px";
+    color_mark_f.top="75px";
+    color_mark_f.left=color_mark_global_left;
+    color_mark_f.cornerRadius = 1;
+    color_mark_f.thickness = 1;
+    color_mark_f.horizontalAlignment = al_left;
+    color_mark_f.verticalAlignment = al_top;
+    color_mark_f.textHorizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    color_mark_f.fontFamily = 'monospace';
+    color_mark_f.onPointerClickObservable.add (function() {
+
+        if (flato_es_visible==1) {
+
+            flato_es_visible=0;
+            color_mark_f.background="black";
+            flatodromic_line_sp.isVisible=flato_es_visible;
+            flatodromic_line_fe.isVisible=flato_es_visible;
+
+        } else {
+
+            flato_es_visible=1;
+            color_mark_f.background=line_color_flat.toHexString();
+            flatodromic_line_sp.isVisible=flato_es_visible;
+            flatodromic_line_fe.isVisible=flato_es_visible;
+
+        }
+
+    });
+    data_rect.addControl(color_mark_f);
+
+
+    //Control de visibilidad de la línea equiangular
+    var color_mark_e = new BABYLON.GUI.Rectangle("");
+    color_mark_e.color = line_color_eqac.toHexString();
+    color_mark_e.background = line_color_eqac.toHexString();
+    color_mark_e.height="12px";
+    color_mark_e.width="12px";
+    color_mark_e.top="92px";
+    color_mark_e.left=color_mark_global_left;
+    color_mark_e.cornerRadius = 1;
+    color_mark_e.thickness = 1;
+    color_mark_e.horizontalAlignment = al_left;
+    color_mark_e.verticalAlignment = al_top;
+    color_mark_e.textHorizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    color_mark_e.fontFamily = 'monospace';
+    color_mark_e.onPointerClickObservable.add (function() {
+
+        if (eqac_es_visible==1) {
+
+            eqac_es_visible=0;
+            color_mark_e.background="black";
+            equiangular_line_sp.isVisible=eqac_es_visible;
+            equiangular_line_fe.isVisible=eqac_es_visible;
+
+        } else {
+
+            eqac_es_visible=1;
+            color_mark_e.background=line_color_eqac.toHexString();
+            equiangular_line_sp.isVisible=eqac_es_visible;
+            equiangular_line_fe.isVisible=eqac_es_visible;
+
+        }
+
+    });
+    data_rect.addControl(color_mark_e);
+
+
+    //Control para mantener la distancia
+    //ortodrómica constante
+    var kod_mark = new BABYLON.GUI.Rectangle("");
+    kod_mark.color = "gray";
+    kod_mark.background = "gray";
+    kod_mark.height="16px";
+    kod_mark.width="160px";
+    kod_mark.top="38px";
+    kod_mark.left="5px";
+    kod_mark.cornerRadius = 1;
+    kod_mark.thickness = 1;
+    kod_mark.horizontalAlignment = al_left;
+    kod_mark.verticalAlignment = al_top;
+    kod_mark.textHorizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    kod_mark.fontFamily = 'monospace';
+    kod_mark.onPointerClickObservable.add (function() {
+
+       if (keep_orto_dist==1) {
+        
+           keep_orto_dist=0;
+           kod_mark.background="gray";
+
+       } else {
+
+           keep_orto_dist=1;
+           kod_mark.background="red";
+
+       }
+
+    });
+    data_rect.addControl(kod_mark);
+
+
+    sp_mark_global_left=108;
+
+    //Texto de datos: Sphere
+    var data_text_sp = new BABYLON.GUI.TextBlock();
+    data_text_sp.text="Sphere"
+    data_text_sp.color = "white";
+    data_text_sp.fontSize = 14;
+    data_text_sp.top="21px";
+    data_text_sp.height="16px";
+    data_text_sp.width="60px";
+    data_text_sp.left=sp_mark_global_left+4;
+    data_text_sp.horizontalAlignment = al_left;
+    data_text_sp.verticalAlignment  = al_top;
+    data_text_sp.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    data_text_sp.fontFamily = 'monospace';
+    data_rect.addControl(data_text_sp);
+
+    //Control selección de info de las líneas
+    //sobre la esfera
+    var sp_mark = new BABYLON.GUI.Rectangle("");
+    sp_mark.color = "black";
+    sp_mark.background = "red";
+    sp_mark.height="16px";
+    sp_mark.width="57px";
+    sp_mark.top="21px";
+    sp_mark.left=sp_mark_global_left;
+    sp_mark.cornerRadius = 1;
+    sp_mark.thickness = 1;
+    sp_mark.horizontalAlignment = al_left;
+    sp_mark.verticalAlignment = al_top;
+    sp_mark.textHorizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    sp_mark.fontFamily = 'monospace';
+    sp_mark.onPointerClickObservable.add (function() {
+
+       if (sp_sel==1) {
+        
+           sp_sel=0;
+           fe_sel=1;
+           sp_mark.background="black";
+           fe_mark.background="red";
+
+           camera.target=EarthDisk.position;
+           camera.radius=6.5*rfe;
+
+       } else {
+
+           sp_sel=1;
+           fe_sel=0;
+           sp_mark.background="red";
+           fe_mark.background="black"
+
+           camera.target=EarthSphere.position;
+           camera.radius=4.0*r;
+
+       }
+
+    });
+    data_rect.addControl(sp_mark);
+
+
+    fe_mark_global_left=182;
+
+    //Texto de datos: Sphere
+    var data_text_fe = new BABYLON.GUI.TextBlock();
+    data_text_fe.text="Disk"
+    data_text_fe.color = "white";
+    data_text_fe.fontSize = 14;
+    data_text_fe.top="21px";
+    data_text_fe.height="16px";
+    data_text_fe.width="60px";
+    data_text_fe.left=fe_mark_global_left+4;
+    data_text_fe.horizontalAlignment = al_left;
+    data_text_fe.verticalAlignment  = al_top;
+    data_text_fe.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    data_text_fe.fontFamily = 'monospace';
+    data_rect.addControl(data_text_fe);
+
+    //Control selección de info de las líneas
+    //sobre el disco
+    var fe_mark = new BABYLON.GUI.Rectangle("");
+    fe_mark.color = "black";
+    fe_mark.background = "black";
+    fe_mark.height="16px";
+    fe_mark.width="42px";
+    fe_mark.top="21px";
+    fe_mark.left=fe_mark_global_left;
+    fe_mark.cornerRadius = 1;
+    fe_mark.thickness = 1;
+    fe_mark.horizontalAlignment = al_left;
+    fe_mark.verticalAlignment = al_top;
+    fe_mark.textHorizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    fe_mark.fontFamily = 'monospace';
+    fe_mark.onPointerClickObservable.add (function() {
+
+       if (fe_sel==1) {
+        
+           fe_sel=0;
+           sp_sel=1;
+           sp_mark.background="red";
+           fe_mark.background="black";
+
+           camera.target=EarthSphere.position;
+           camera.radius=4.0*r;
+
+       } else {
+
+           fe_sel=1;
+           sp_sel=0;
+           fe_mark.background="red";
+           sp_mark.background="black"
+
+           camera.target=EarthDisk.position;
+           camera.radius=6.5*rfe;
+
+       }
+
+    });
+    data_rect.addControl(fe_mark);
+
+
+    //Cuadro de info
+    var info_rect = new BABYLON.GUI.Rectangle();
+    info_rect.width = "170px";
+    info_rect.height = "100px";
+    info_rect.cornerRadius = 10;
+    info_rect.color = "green";
+    info_rect.thickness = 4;
+    info_rect.background = "black";
+    info_rect.top="-120px";
+    info_rect.left="0px";
+    info_rect.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+    info_rect.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
+    info_rect.alpha=0.6;
+    info_rect.isVisible=0;		
+    advancedTexture.addControl(info_rect);
+
+    //Texto de info
+    var info_text_1 = new BABYLON.GUI.TextBlock();
+    info_text_1.text = " ";
+    info_text_1.color = "white";
+    info_text_1.fontSize = 14;
+    info_text_1.top="0%";
+    info_text_1.horizontalAlignment = al_left;
+    info_text_1.verticalAlignment  = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
+    info_text_1.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    info_text_1.fontFamily = 'monospace';
+    info_rect.addControl(info_text_1);
+
+    //Resalado en rojo de la distancia hasta la marca roja
+    var red_mark = new BABYLON.GUI.Rectangle("");
+    red_mark.color = "red";
+    red_mark.background = "red";
+    red_mark.height="16px";
+    red_mark.width="160px";
+    red_mark.top="56px";
+    red_mark.left="5px";
+    red_mark.cornerRadius = 1;
+    red_mark.thickness = 1;
+    red_mark.horizontalAlignment = al_left;
+    red_mark.verticalAlignment = al_top;
+    red_mark.textHorizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    red_mark.alpha=0.5;
+    info_rect.addControl(red_mark);
+
+    //Resaltado en azul de la distancia hasta la marca azul
+    var blue_mark = new BABYLON.GUI.Rectangle("");
+    blue_mark.color = "blue";
+    blue_mark.background = "blue";
+    blue_mark.height="16px";
+    blue_mark.width="160px";
+    blue_mark.top="72px";
+    blue_mark.left="5px";
+    blue_mark.cornerRadius = 1;
+    blue_mark.thickness = 1;
+    blue_mark.horizontalAlignment = al_left;
+    blue_mark.verticalAlignment = al_top;
+    blue_mark.textHorizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    blue_mark.alpha=0.5;
+    info_rect.addControl(blue_mark);
+
+
+    info_mark_global_left=262+10;
+
+    //Texto de datos: i
+    var data_text_i = new BABYLON.GUI.TextBlock();
+    data_text_i.text="i"
+    data_text_i.color = "white";
+    data_text_i.fontSize = 14;
+    data_text_i.top="-26px";
+    data_text_i.left=info_mark_global_left+2;
+    data_text_i.horizontalAlignment = al_left;
+    data_text_i.verticalAlignment  = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
+    data_text_i.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    data_text_i.fontFamily = 'monospace';
+    data_rect.addControl(data_text_i);
+
+    //Selector de información sobre la línea ortodrómica
+    var info_mark_o = new BABYLON.GUI.Rectangle("");
+    info_mark_o.color = line_color_orto.toHexString();
+    info_mark_o.background = line_color_orto.toHexString();
+    info_mark_o.background = "black";
+    info_mark_o.height="12px";
+    info_mark_o.width="12px";
+    info_mark_o.top="41px";
+    info_mark_o.left=info_mark_global_left;
+    info_mark_o.cornerRadius = 1;
+    info_mark_o.thickness = 1;
+    info_mark_o.horizontalAlignment = al_left;
+    info_mark_o.verticalAlignment = al_top;
+    info_mark_o.textHorizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    info_mark_o.fontFamily = 'monospace';
+    info_mark_o.onPointerClickObservable.add (function() {
+
+        if (info_orto==1) {
+            
+            info_orto=0;
+            info_loxo=0;
+            info_flat=0;
+            info_eqac=0;
+
+            info_mark_o.background = "black";
+            info_mark_l.background = "black";
+            info_mark_f.background = "black";
+            info_mark_e.background = "black";
+
+        } else {
+
+            info_orto=1;
+            info_loxo=0;
+            info_flat=0;
+            info_eqac=0;
+
+            info_mark_o.background = line_color_orto.toHexString();
+            info_mark_l.background = "black";
+            info_mark_f.background = "black";
+            info_mark_e.background = "black";
+            
+
+        }
+
+    });
+    data_rect.addControl(info_mark_o);
+
+
+    //Selector de información sobre la línea loxodrómica
+    var info_mark_l = new BABYLON.GUI.Rectangle("");
+    info_mark_l.color = line_color_loxo.toHexString();
+    info_mark_l.background = "black";
+    info_mark_l.height="12px";
+    info_mark_l.width="12px";
+    info_mark_l.top="58px";
+    info_mark_l.left=info_mark_global_left;
+    info_mark_l.cornerRadius = 1;
+    info_mark_l.thickness = 1;
+    info_mark_l.horizontalAlignment = al_left;
+    info_mark_l.verticalAlignment = al_top;
+    info_mark_l.textHorizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    info_mark_l.fontFamily = 'monospace';
+    info_mark_l.onPointerClickObservable.add (function() {
+
+        if (info_loxo==1) {
+            
+            info_orto=0;
+            info_loxo=0;
+            info_flat=0;
+            info_eqac=0;
+
+            info_mark_o.backgorund = "black";
+            info_mark_l.background = "black";
+            info_mark_f.background = "black";
+            info_mark_e.background = "black";
+
+        } else {
+
+            info_orto=0;
+            info_loxo=1;
+            info_flat=0;
+            info_eqac=0;
+
+            info_mark_o.background = "black";
+            info_mark_l.background = line_color_loxo.toHexString();
+            info_mark_f.background = "black";
+            info_mark_e.background = "black";
+            
+
+        }
+
+    });
+    data_rect.addControl(info_mark_l);
+
+    //Selector de información sobre la línea flatodrómica
+    var info_mark_f = new BABYLON.GUI.Rectangle("");
+    info_mark_f.color = line_color_flat.toHexString();
+    info_mark_f.background = "black";
+    info_mark_f.height="12px";
+    info_mark_f.width="12px";
+    info_mark_f.top="75px";
+    info_mark_f.left=info_mark_global_left;
+    info_mark_f.cornerRadius = 1;
+    info_mark_f.thickness = 1;
+    info_mark_f.horizontalAlignment = al_left;
+    info_mark_f.verticalAlignment = al_top;
+    info_mark_f.textHorizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    info_mark_f.fontFamily = 'monospace';
+    info_mark_f.onPointerClickObservable.add (function() {
+
+        if (info_flat==1) {
+            
+            info_orto=0;
+            info_loxo=0;
+            info_flat=0;
+            info_eqac=0;
+
+            info_mark_o.backgorund = "black";
+            info_mark_l.background = "black";
+            info_mark_f.background = "black";
+            info_mark_e.background = "black";
+
+        } else {
+
+            info_orto=0;
+            info_loxo=0;
+            info_flat=1;
+            info_eqac=0;
+
+            info_mark_o.background = "black";
+            info_mark_l.background = "black";
+            info_mark_f.background = line_color_flat.toHexString();
+            info_mark_e.background = "black";
+
+        }
+
+    });
+    data_rect.addControl(info_mark_f);
+
+
+    //Selector de información sobre la línea equiangular
+    var info_mark_e = new BABYLON.GUI.Rectangle("");
+    info_mark_e.color = line_color_eqac.toHexString();
+    info_mark_e.background = "black";
+    info_mark_e.height="12px";
+    info_mark_e.width="12px";
+    info_mark_e.top="92px";
+    info_mark_e.left=info_mark_global_left;
+    info_mark_e.cornerRadius = 1;
+    info_mark_e.thickness = 1;
+    info_mark_e.horizontalAlignment = al_left;
+    info_mark_e.verticalAlignment = al_top;
+    info_mark_e.textHorizontalAlignment=BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    info_mark_e.fontFamily = 'monospace';
+    info_mark_e.onPointerClickObservable.add (function() {
+
+        if (info_eqac==1) {
+            
+            info_orto=0;
+            info_loxo=0;
+            info_flat=0;
+            info_eqac=0;
+
+            info_mark_o.backgorund = "black";
+            info_mark_l.background = "black";
+            info_mark_f.background = "black";
+            info_mark_e.background = "black";
+
+        } else {
+
+            info_orto=0;
+            info_loxo=0;
+            info_flat=0;
+            info_eqac=1;
+
+            info_mark_o.background = "black";
+            info_mark_l.background = "black";
+            info_mark_e.background = line_color_eqac.toHexString();
+            info_mark_f.background = "black";
+
+        }
+
+    });
+    data_rect.addControl(info_mark_e);
+
+
+    //Cuadro de opciones
+    var options_rect = new BABYLON.GUI.Rectangle();
+    options_rect.width = "200px";
+    options_rect.height = "70px";
+    options_rect.cornerRadius = 10;
+    options_rect.color = "black";
+    options_rect.thickness = 4;
+    options_rect.background = "black";
+    options_rect.top="0px";
+    options_rect.left="0px";
+    options_rect.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    options_rect.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+    options_rect.alpha=0.6;		
+    advancedTexture.addControl(options_rect);
+
+    //Texto del cuadro de opciones
+    var opt_text = new BABYLON.GUI.TextBlock();
+    opt_text.text="\n"+
+                  " DISK SIZE\n"+
+                  " LINES GLOW\n"+
+                  " MOUSE SEN.";
+    opt_text.color = "white";
+    opt_text.fontSize = 12;
+    opt_text.top="0px";
+    opt_text.left=0;
+    opt_text.horizontalAlignment = al_left;
+    opt_text.verticalAlignment  = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
+    opt_text.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    opt_text.fontFamily = 'monospace';
+    options_rect.addControl(opt_text);
+
+
+     //Texto del cuadro de opciones
+    var opt_text_2 = new BABYLON.GUI.TextBlock();
+
+    //Información sobre la escala del disco
+    if (sfe==sfe_max) {
+        opt_text_2.text="  (match meridian size)\n";
+    } else if (sfe==sfe_min) {
+        opt_text_2.text="  (match equatorial size)\n";
+    } else {
+        opt_text_2.text="  (another pointless size)\n";
+    }
+    
+    opt_text_2.color = "yellow";
+    opt_text_2.fontSize = 12;
+    opt_text_2.top="-15px";
+    opt_text_2.left=0;
+    opt_text_2.horizontalAlignment = al_left;
+    opt_text_2.verticalAlignment  = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
+    opt_text_2.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;		
+    opt_text_2.fontFamily = 'monospace';
+    options_rect.addControl(opt_text_2);
+
+
+    //Control del intensidad del efecto neón
+    glow_slider = new BABYLON.GUI.Slider();
+    glow_slider.minimum = 0;
+    glow_slider.maximum = 5;
+    glow_slider.value = 2;
+    glow_slider.step=0.001;
+    glow_slider.height = "11px";
+    glow_slider.width = "90px";
+    glow_slider.top="32px";
+    glow_slider.left="96px";
+    glow_slider.background = "gray";
+    glow_slider.color="gray";
+    glow_slider.horizontalAlignment = al_left;
+    glow_slider.verticalAlignment = al_top;			
+    glow_slider.onValueChangedObservable.add(function(value) {
+        glo.intensity = glow_slider.value; 
+    });
+    options_rect.addControl(glow_slider);
+
+
+    //Control de tamaño del modelo plano
+    fesize_slider = new BABYLON.GUI.Slider();
+    fesize_slider.minimum = sfe_min;
+    fesize_slider.maximum = sfe_max;
+    fesize_slider.value = sfe*1.0;
+    fesize_slider.step=(sfe_max-sfe_min)/20;
+    fesize_slider.height = "11px";
+    fesize_slider.width = "90px";
+    fesize_slider.top="18px";
+    fesize_slider.left="96px";
+    fesize_slider.background = "gray";
+    fesize_slider.color="gray";
+    fesize_slider.horizontalAlignment = al_left;
+    fesize_slider.verticalAlignment = al_top;			
+    fesize_slider.onValueChangedObservable.add(function(value) {
+
+        sfe=fesize_slider.value;
+        rfe=sfe*r;
+        factor_de_escala_fe=sfe*earth_radius/rfe;
+
+        EarthDisk.scaling=new BABYLON.Vector3(sfe/sfe0,sfe/sfe0,sfe/sfe0);
+
+        fe_pos=new BABYLON.Vector3(0,0,-4*rfe);
+        EarthDisk.position= fe_pos;
+
+        update_all();
+
+        if (fe_sel==1) {
+            camera.target=fe_pos;
+            //camera.radius=4*r*sfe;
+        }
+
+        opt_text_2.text="  (another pointless size)\n";
+        if (fesize_slider.value==sfe_min) {
+            opt_text_2.text="  (match equatorial size)\n";
+        }
+        if (fesize_slider.value==sfe_max) {
+            opt_text_2.text="   (match meridian size)\n";
+        }
+        
+    });
+    options_rect.addControl(fesize_slider);
+    fesize_slider.isVisible=1;
+
+
+    //Control de la sensibilidad del ratón
+    //al mover las posiciones
+    mouse_slider = new BABYLON.GUI.Slider();
+    mouse_slider.minimum = 0.25;
+    mouse_slider.maximum = 2;
+    mouse_slider.value = mouse_sense;
+    mouse_slider.step=(2-0.25)/16;
+    mouse_slider.height = "11px";
+    mouse_slider.width = "90px";
+    mouse_slider.top="48px";
+    mouse_slider.left="96px";
+    mouse_slider.background = "gray";
+    mouse_slider.color="gray";
+    mouse_slider.horizontalAlignment = al_left;
+    mouse_slider.verticalAlignment = al_top;			
+    mouse_slider.onValueChangedObservable.add(function(value) {
+        mouse_sense = mouse_slider.value;
+    });
+    options_rect.addControl(mouse_slider);
+
+
+
+    //END GUI----------------------------------------------------
+
+
+    //Posición del cursor en la patalla
+    var getScreenPosition = function () {
+        
+        return [scene.pointerX,scene.pointerY]
+
+    }
+
+    //Comportamiento al pulsar el botón del ratón
+    var pointerDown = function (mesh) {
+
+            currentMesh = mesh;   
+
+            startingPoint = getScreenPosition();
+
+            //Se desconecta la cámara
+            //si el mesh seleccionado es 
+            //la esfera roja o azul
+
+            if (startingPoint) { 
+                setTimeout(function () {
+                    camera.detachControl(canvas);
+                }, 0);
+            }
+
+    }
+
+    //Comportamiento al soltar el botón del ratón
+    var pointerUp = function () {
+
+        //Se vuelve a conectar la cámara
+        if (startingPoint) {
+            camera.attachControl(canvas, true);
+            startingPoint = null;
+            return;
+        }
+
+    }
+
+    //Comportamiento al mover 
+    //el ratón con el botón pulsado
+    var pointerMove = function () {
+
+        //Desactiva la información sobre las líneas
+        //que no son visibles
+        var general_info=1;
+        if (info_orto==1 && orto_es_visible==0) general_info=0;
+        if (info_loxo==1 && loxo_es_visible==0) general_info=0;
+        if (info_flat==1 && flato_es_visible==0) general_info=0;
+
+        //Si la opción de información sobre alguna de las
+        // líneas está activada...
+        if ((info_orto!=0 || info_loxo!=0 || info_flat!=0 || info_eqac!=0) && general_info==1) {
+
+            //Copia los datos de la línea seleccionada
+            //a variables locales y cambia el color
+            //de la esfera auxiliar y del cuadro de información
+
+            if (info_orto==1) {
+                if (sp_sel==1) {
+                    var line_data_sel=line_data;
+                    var dist_line=dist_orto;
+                    var max_dist=distancia_sp_suma;
+                    auxMat.emissiveColor=line_color_orto;
+                    info_rect.color=line_color_orto.toHexString();
+                } else {
+                    var line_data_sel=line_data_fe;
+                    var dist_line=dist_orto_fe;
+                    var max_dist=distancia_fe_suma;
+                    auxMat.emissiveColor=line_color_orto;
+                    info_rect.color=line_color_orto.toHexString();
+                }
+            }
+            if (info_loxo==1) {
+                if (sp_sel==1) {
+                    var line_data_sel=line_data_lox;
+                    var dist_line=dist_loxo;
+                    var max_dist=distancia_sp_lox_suma;
+                    auxMat.emissiveColor=line_color_loxo;
+                    info_rect.color=line_color_loxo.toHexString();
+                } else {
+                    var line_data_sel=line_data_lox_fe;
+                    var dist_line=dist_loxo_fe;
+                    var max_dist=distancia_fe_lox_suma;
+                    auxMat.emissiveColor=line_color_loxo;
+                    info_rect.color=line_color_loxo.toHexString();
+                }
+            }
+            if (info_flat==1) {
+                if (sp_sel==1) {
+                    var line_data_sel=line_data_flat_sp;
+                    var dist_line=dist_flat;
+                    var max_dist=distancia_sp_flat_suma;
+                    auxMat.emissiveColor=line_color_flat;
+                    info_rect.color=line_color_flat.toHexString();
+                } else {
+                    var line_data_sel=line_data_flat_fe;
+                    var dist_line=dist_flat_fe;
+                    var max_dist=distancia_fe_flat_suma;
+                    auxMat.emissiveColor=line_color_flat;
+                    info_rect.color=line_color_flat.toHexString();
+                }
+            }
+            if (info_eqac==1) {
+                if (sp_sel==1) {
+                    var line_data_sel=line_data_eqac_sp;
+                    var dist_line=dist_eqac;
+                    var max_dist=distancia_sp_eqac_suma;
+                    auxMat.emissiveColor=line_color_eqac;
+                    info_rect.color=line_color_eqac.toHexString();
+                } else {
+                    var line_data_sel=line_data_eqac_fe;
+                    var dist_line=dist_eqac_fe;
+                    var max_dist=distancia_fe_eqac_suma;
+                    auxMat.emissiveColor=line_color_eqac;
+                    info_rect.color=line_color_eqac.toHexString();
+                }
+            }
+
+            //Variables para la transformación 3D-2D
+            var tm=scene.getTransformMatrix();
+            var idm=BABYLON.Matrix.Identity();
+            var vptog=camera.viewport.toGlobal(
+                engine.getRenderWidth(),
+                engine.getRenderHeight());
+            var scx=scene.pointerX;
+            var scy=scene.pointerY;
+
+            //Transforma cada punto 3D de la línea
+            //seleccionada a las coordenadas de pantalla
+            //y busca el punto más cercano a la posición
+            //del puntero dentro de un rango de 15px
+            var scnt=-1;
+            for (var i=0;i<ndiv+1;i++) {
+
+                var sco=BABYLON.Vector3.Project(
+                    line_data_sel[i],
+                    idm,
+                    tm,
+                    vptog);
+
+                sdx=scx-sco.x;
+                sdy=scy-sco.y;
+                sdist=Math.sqrt(sdx*sdx+sdy*sdy);
+
+                if (sdist<15) {
+                    scnt=i;
+                    break;
+                }
+
+            }
+
+
+            if (sp_sel==1) {
+                //Comprueba si el punto seleccinado de la
+                //línea es visible y no está oculto por la esfera
+                if (scnt!=-1) {                
+                    var cpn=(camera.position).subtract(zero);
+                    cpn.normalize();
+                    var ppn=(line_data_sel[i]).subtract(zero);
+                    ppn.normalize();
+                    var cp_dire=BABYLON.Vector3.Dot(cpn,ppn);
+                } else {
+                    var cp_dire=-1;
+                }
+            } else {
+                cp_dire=1;
+            }
+            
+
+            //Cálculos de ubicación, rumbo y distancia
+            //del punto más proximo al puntero de la
+            //línea seleccionada
+            if (scnt!=-1 && cp_dire>-0.01) {
+
+                if (sp_sel==1) {
+
+                    var p5=line_data_sel[scnt];
+                    auxSphere.position=p5;
+                    info_rect.isVisible=1;
+
+                    var lat5=Math.asin(p5.y/rdeltar);
+                    var lon5=Math.atan2(p5.z,p5.x);
+
+                    if (scnt==0) {
+                        var p6=line_data_sel[1];
+                    } else if (scnt==ndiv) {
+                        var p6=line_data_sel[ndiv-1];
+                    } else {
+                        var p6=line_data_sel[i-1];
+                    }
+
+                    var lat6=Math.asin(p6.y/rdeltar);
+                    var lon6=Math.atan2(p6.z,p6.x);
+
+                
+                    var dl65=lon6-lon5;
+                    if (dl65>0.5) dl65+=-2*Math.PI;
+                    if (dl65<-0.5) dl65+=2*Math.PI;
+
+                    var p6angle=Math.atan2(dl65,(agdf(lat6)-agdf(lat5)))/dtor;
+                    if (p6angle<0) p6angle=p6angle+360;
+                    var ip6angle=p6angle-180;
+                    if (ip6angle<0) ip6angle=ip6angle+360;
+                    
+                    var ilat5=Math.round(lat5/dtor*10)/10;
+                    var ilon5=Math.round(lon5/dtor*10)/10;
+                    var dst=Math.round(dist_line[scnt]);
+                    var idst=Math.round(-dist_line[scnt]+max_dist);
+
+
+                } else {
+
+                    var p5=line_data_sel[scnt];
+                    auxSphere.position=p5;
+                    info_rect.isVisible=1;
+
+                    var dc5=BABYLON.Vector3.Distance(fe_pos,new BABYLON.Vector3(p5.x,0,p5.z));
+                    var lat5=Math.PI*(0.5-dc5/(2*rfe));
+                    dx5=p5.x-fe_pos.x;
+                    dz5=p5.z-fe_pos.z;
+                    lon5=Math.atan2(dz5,dx5);
+
+                    if (scnt==0) {
+                        var p6=line_data_sel[1];
+                    } else if (scnt==ndiv) {
+                        var p6=line_data_sel[ndiv-1];
+                    } else {
+                        var p6=line_data_sel[i-1];
+                    }
+
+                    
+                    var p51=new BABYLON.Vector3(p5.x,0,p5.z);
+                    var un=fe_pos.subtract(p51);
+                    un.normalize();
+
+                    var ue=new BABYLON.Vector3(-un.z,0,un.x);
+
+                    var p5p6=p6.subtract(p5);
+                    p5p6.normalize();
+
+                    
+
+                    var compn=BABYLON.Vector3.Dot(p5p6,un);
+                    var compe=BABYLON.Vector3.Dot(p5p6,ue);
+
+                    var p6angle=Math.atan2(compe,compn)/dtor;
+
+                    if (p6angle<0) p6angle=p6angle+360;
+                    var ip6angle=p6angle-180;
+                    if (ip6angle<0) ip6angle=ip6angle+360;
+
+                    var ilat5=Math.round(lat5/dtor*10)/10;
+                    var ilon5=Math.round(lon5/dtor*10)/10;
+                    var dst=Math.round(dist_line[scnt]);
+                    var idst=Math.round(-dist_line[scnt]+max_dist);
+
+                }
+
+                var slat="";
+                if (ilat5>=0) slat="+";
+                var slon="";
+                if (ilon5>=0) slon="+";
+
+                //Presentación de la información sobre
+                //ubicación, rumbo y distancias
+                //solo si el puntero del ratón está
+                //cerca de la línea
+                info_text_1.text = " Lat: "+ slat +ilat5.toString()+"º\n"+
+                                   " Lon: "+ slon +ilon5.toString()+"º\n"+
+                " Rumb: "+ 
+                (Math.round(p6angle*10)/10).toString()+"º/"+
+                (Math.round(ip6angle*10)/10).toString()+"º\n"+
+                " to red:  "+dst.toString()+"km \n"+
+                " to blue: "+idst.toString()+"km";
+
+                red_mark.height="16px";
+                red_mark.top="56px";
+                red_mark.left="5px";
+
+                blue_mark.height="16px";
+                blue_mark.top="72px";
+                blue_mark.left="5px";
+                
+
+            } else {
+
+                //Si el puntero del ratón
+                //no está cerca de la línea
+                //no se muestra el cuadro de información
+                //ni la esfera auxiliar
+                auxSphere.position=zero;
+                info_rect.isVisible=0;
+
+            }
+
+        }
+
+       
+        //No hace nada si no se ha pulsado el
+        //botón del ratón
+        if (!startingPoint) {
+            return;
+        }
+
+        //No hace nada si la posición  
+        //no está definida o es = a null
+        var current = getScreenPosition();
+        if (!current) {
+            return;
+        }
+        
+
+        //Diferencia de posición
+        var diffx=current[0]-startingPoint[0];
+        var diffy=current[1]-startingPoint[1];
+
+        //Copia de las posiciones actuales
+        var delta=0.01*mouse_sense;
+        var latc1=lat1+0.0;
+        var latc2=lat2-0;
+        var lonc1=lon1-0;var lonc2=lon2-0;
+        var pos3c=pos3.clone();
+        var pos4c=pos4.clone();
+
+        
+        //Movimiento de las esferas roja
+        //y azul manteniedo constante
+        //la distancia ortodrómica
+        //(rotaciones usando SO3)
+        if (keep_orto_dist==1) {
+
+            var angev=(diffx)*0.02*mouse_sense;
+
+            //La esfera roja puede moverse libremente
+            //arrastrando a la esfera azul para mantener
+            //la distancia ortodrómica constante.
+            if (currentMesh==redSphere || currentMesh==redSphere_fe) {
+
+                if (Math.abs(diffy)>Math.abs(diffx)) {
+
+                    var ev=(line_data[0]).subtract(zero);
+                    ev.normalize();
+
+                    var ev2=new BABYLON.Vector3(0,1,0);
+
+                    var ev3=BABYLON.Vector3.Cross(ev,ev2);
+                    ev3.normalize();
+
+                    var wx=ev3.x;
+                    var wy=ev3.z;
+                    var wz=ev3.y;
+
+                    var angev=(diffy)*0.02*mouse_sense;
+
+                } else {
+
+                    var wx=0;
+                    var wy=0;
+                    var wz=1;
+
+                    var angev=(diffx)*0.02*mouse_sense;
+
+                }
+
+                var c=Math.cos(angev);
+                var s=Math.sin(angev);
+                var ic=1-c;
+
+                mr00=c+ic*wx*wx;
+                mr01=ic*wx*wy-s*wz;
+                mr02=ic*wx*wz+s*wy;
+
+                mr10=ic*wy*wx+s*wz;
+                mr11=c+ic*wy*wy;
+                mr12=ic*wy*wz-s*wx;
+
+                mr20=ic*wz*wx-s*wy;
+                mr21=ic*wz*wy+s*wx;
+                mr22=c+ic*wz*wz;
+                
+                var ax=line_data[0].x;
+                var ay=line_data[0].z;
+                var az=line_data[0].y;
+
+                var rx=mr00*ax+mr01*ay+mr02*az;
+                var rz=mr10*ax+mr11*ay+mr12*az;
+                var ry=mr20*ax+mr21*ay+mr22*az;
+
+                var lat11=Math.asin(ry/rdeltar);
+                var lon11=Math.atan2(rz,rx);
+                if (Math.abs(lon1-lon11)>-1.5 && Math.abs(lat11)<0.99*Math.PI/2) {
+
+                    lat1=Math.asin(ry/rdeltar);
+                    lon1=Math.atan2(rz,rx);
+
+                    //Actualización de la posición 
+                    //de la esfera roja
+                    pos1=rlatlon_to_xyz(r,lat1,lon1);
+
+                    redSphere.position=pos1;
+
+                    var ax2=line_data[ndiv].x;
+                    var ay2=line_data[ndiv].z;
+                    var az2=line_data[ndiv].y;
+
+                    var rx2=mr00*ax2+mr01*ay2+mr02*az2;
+                    var rz2=mr10*ax2+mr11*ay2+mr12*az2;
+                    var ry2=mr20*ax2+mr21*ay2+mr22*az2;
+
+                    lat2=Math.asin(ry2/rdeltar);
+                    lon2=Math.atan2(rz2,rx2);
+
+                    //Actualización de la posición 
+                    //de la esfera roja
+                    pos2=rlatlon_to_xyz(r,lat2,lon2);
+
+                    blueSphere.position=pos2;
+
+                }
+
+                change_pos=1;
+
+            }
+
+            //La esfera azul solo puede rotar, tomando
+            //como eje el vector entre la esfera roja y el centro
+            //mantiendo la distancia ortodrómica constante
+            if (currentMesh==blueSphere || currentMesh==blueSphere_fe) {
+
+                var ev=(line_data[0]).subtract(zero);
+                ev.normalize();
+
+                var wx=ev.x;
+                var wy=ev.z;
+                var wz=ev.y;
+
+                var c=Math.cos(angev);
+                var s=Math.sin(angev);
+                var ic=1-c;
+
+                mr00=c+ic*wx*wx;
+                mr01=ic*wx*wy-s*wz;
+                mr02=ic*wx*wz+s*wy;
+
+                mr10=ic*wy*wx+s*wz;
+                mr11=c+ic*wy*wy;
+                mr12=ic*wy*wz-s*wx;
+
+                mr20=ic*wz*wx-s*wy;
+                mr21=ic*wz*wy+s*wx;
+                mr22=c+ic*wz*wz;
+                
+                var ax=line_data[ndiv].x;
+                var ay=line_data[ndiv].z;
+                var az=line_data[ndiv].y;
+
+                var rx=mr00*ax+mr01*ay+mr02*az;
+                var rz=mr10*ax+mr11*ay+mr12*az;
+                var ry=mr20*ax+mr21*ay+mr22*az;
+
+                lat2=Math.asin(ry/rdeltar);
+                lon2=Math.atan2(rz,rx);
+
+                //Actualización de la posición de la esfera roja
+                pos2=rlatlon_to_xyz(r,lat2,lon2);
+
+                blueSphere.position=pos2;
+
+                change_pos=1;
+
+            }
+
+        }
+
+
+        //Si se ha seleccionado la esfera roja
+        //sobre la tierra plana
+        if (currentMesh==redSphere_fe && keep_orto_dist==0) {
+
+            //Modificación de las direcciones de movimiento
+            //sobre el plano en fución de la orientación de la
+            //cámara
+            var rcp=camera.position.subtract(fe_pos);
+            var rcpa=Math.atan2(rcp.z,rcp.x);
+
+            pos3.x+=10*delta*(diffy*Math.cos(rcpa)-diffx*Math.sin(rcpa));
+            pos3.z+=10*delta*(diffy*Math.sin(rcpa)+diffx*Math.cos(rcpa));
+            
+            
+            var dc_aux=BABYLON.Vector3.Distance(fe_pos,new BABYLON.Vector3(pos3.x,0,pos3.z));
+            lat1=Math.PI*(0.5-dc_aux/(2*rfe));
+            lon1=Math.atan2(pos3.z-fe_pos.z,pos3.x-fe_pos.x);
+            
+            //console.log(dc_aux,2*r);
+            if (dc_aux>2*rfe) {
+                pos3=pos3c;
+                lat1=lat1c;
+                lon1=lon1c;
+            }
+
+            //Cálculo de la distancia angular
+            //entre las esferas roja y azul
+            var v=Math.sin(lat1)*Math.sin(lat2) + Math.cos(lat1)*Math.cos(lat2)*Math.cos(lon1-lon2);
+            var ang=Math.acos(v)*180/Math.PI;
+
+            //No se permite que la distancia
+            //angular sea inferior a 5º
+            if (ang<5) {
+                lat1=latc1;
+                lon1=lonc1;
+                pos3=pos3c;
+                return;
+            }
+
+            pos1=rlatlon_to_xyz(r,lat1,lon1);
+            redSphere.position=pos1;
+
+            redSphere_fe.position=pos3;
+
+            change_pos=1;
+            
+        }
+
+        //Si se ha seleccionado la esfera azul
+        //sobre la tierra plana
+        if (currentMesh==blueSphere_fe && keep_orto_dist==0) {
+            
+            //Modificación de las direcciones de movimiento
+            //sobre el plano en fución de la orientación de la
+            //cámara
+            var rcp=camera.position.subtract(fe_pos);
+            var rcpa=Math.atan2(rcp.z,rcp.x);
+
+            pos4.x+=10*delta*(diffy*Math.cos(rcpa)-diffx*Math.sin(rcpa));
+            pos4.z+=10*delta*(diffy*Math.sin(rcpa)+diffx*Math.cos(rcpa));
+            
+            var dc_aux=BABYLON.Vector3.Distance(fe_pos,new BABYLON.Vector3(pos4.x,0,pos4.z));
+            lat2=Math.PI*(0.5-dc_aux/(2*rfe));
+            lon2=Math.atan2(pos4.z-fe_pos.z,pos4.x-fe_pos.x);
+            
+            if (dc_aux>2*rfe) {
+                pos4=pos4c;
+                lat2=lat2c;
+                lon2=lon2c;
+            }
+
+            //Cálculo de la distancia angular
+            var v=Math.sin(lat1)*Math.sin(lat2) + Math.cos(lat1)*Math.cos(lat2)*Math.cos(lon1-lon2);
+            var ang=Math.acos(v)*180/Math.PI;
+
+            //No se permite que la distancia
+            //angular sea inferior a 5º
+            if (ang<5) {
+                lat2=latc2;
+                lon2=lonc2;
+                pos4=pos4c;
+                return;
+            }
+
+            pos2=rlatlon_to_xyz(r,lat2,lon2);
+
+            blueSphere.position=pos2;
+            blueSphere_fe.position=pos4;
+
+            change_pos=1;
+            
+        }
+        
+
+        //Si se ha seleccionado la esfera roja
+        //sobre la esfera...
+        if (currentMesh==redSphere && keep_orto_dist==0) {
+
+            //Cálculo de la nueva posción
+            lat1=lat1-delta*diffy;
+            lon1=lon1+delta*diffx;
+
+            //Se limita el ángulo máximo de latitud
+            if (lat1>max_lat*0.5*Math.PI) lat1=max_lat*0.5*Math.PI;
+            if (lat1<-max_lat*0.5*Math.PI) lat1=-max_lat*0.5*Math.PI;
+
+            //Cálculo de la distancia angular
+            //entre las esferas roja y azul
+            var v=Math.sin(lat1)*Math.sin(lat2) + Math.cos(lat1)*Math.cos(lat2)*Math.cos(lon1-lon2);
+            var ang=Math.acos(v)*180/Math.PI;
+
+            //No se permite que la distancia
+            //angular sea inferior a 5º
+            if (ang<5) {
+                lat1=latc1;
+                lon1=lonc1;
+                return;
+            }
+
+            //Actualización de la posición de la esfera roja
+            pos1=rlatlon_to_xyz(r,lat1,lon1);
+
+            redSphere.position=pos1;
+
+            pos3=rlatlon_to_xyz_fe(rfe,lat1,lon1);
+
+            redSphere_fe.position=pos3;
+
+            change_pos=1;
+        }
+
+        //Si se ha seleccionado la esfera azul...
+        if (currentMesh==blueSphere && keep_orto_dist==0) {
+
+            //Cálculo de la nueva posición
+            lat2=lat2-delta*diffy;
+            lon2=lon2+delta*diffx;
+
+            //Se limita el ángulo máximo de latitud
+            if (lat2>max_lat*0.5*Math.PI) lat2=max_lat*0.5*Math.PI;
+            if (lat2<-max_lat*0.5*Math.PI) lat2=-max_lat*0.5*Math.PI;
+
+            //Cálculo de la distancia angular
+            var v=Math.sin(lat1)*Math.sin(lat2) + Math.cos(lat1)*Math.cos(lat2)*Math.cos(lon1-lon2);
+            var ang=Math.acos(v)*180/Math.PI;
+
+            //No se permite que la distancia
+            //angular sea inferior a 5º
+            if (ang<5) {
+                lat2=latc2;
+                lon2=lonc2;
+                return;
+            }
+
+            //Actualización de la posición de la esfera azul
+            pos2=rlatlon_to_xyz(r,lat2,lon2);
+
+            blueSphere.position=pos2;
+
+            pos4=rlatlon_to_xyz_fe(rfe,lat2,lon2);
+
+            blueSphere_fe.position=pos4;
+
+            change_pos=1;
+        }
+        
+        //Se guarda el punto de incio como actual
+        startingPoint = current;
+
+        //Actualización de posinción de las
+        //esferas roja y azul
+        pos1=redSphere.position;
+        pos2=blueSphere.position;
+        pos3=redSphere_fe.position;
+        pos4=blueSphere_fe.position;
+
+        //Actualización de las posiciones, 
+        //líneas y tamaños
+        update_all();
+
+    }
+
+    //Modelo seleccionado
+    //1 La Tierra
+    //2 tierra plana
+    var model_selected=1;
+    if (sp_sel==1) {model_selected=1;} else {model_selected=2;}
+
+    //Comportamiento general al pulsar botones
+    //o mover el ratón
+    scene.onPointerObservable.add((pointerInfo) => {   
+
+        switch (pointerInfo.type) {
+
+            //Al pulsar el botón del ratón...
+			case BABYLON.PointerEventTypes.POINTERDOWN:
+
+                //sobre la esfera de La Tierra...
+                if(pointerInfo.pickInfo.hit && pointerInfo.pickInfo.pickedMesh == EarthSphere) {
+                    
+                    //La centra
+                    camera.target=EarthSphere.position;
+                    //Actualzia el zoom al cambiar de modelo
+                    if (model_selected==2) camera.radius=4.0*r;
+                    //Actualiza el modelo seleccionado
+                    model_selected=1;
+                    sp_mark.background="red";
+                    fe_mark.background="black";
+                    sp_sel=1;
+                    fe_sel=0;
+                    
+                }
+
+                //sobre el disco de la tierra plana...
+                if(pointerInfo.pickInfo.hit && pointerInfo.pickInfo.pickedMesh == EarthDisk) {
+                    
+                    //la centra
+                    camera.target=EarthDisk.position;
+                    //Actualiza el zoom al cambiar de modelo
+                    if (model_selected==1) camera.radius=6.5*rfe;
+                    //Actualiza el modelo seleccionado
+                    model_selected=2;
+                    sp_mark.background="black";
+                    fe_mark.background="red";
+                    fe_sel=1;
+                    sp_sel=0;
+                        
+                }
+
+               
+
+                 //Si se pulsa sobre cualquier elemento que no 
+                //sea la esfera de La Tierra
+                
+				if(pointerInfo.pickInfo.hit && pointerInfo.pickInfo.pickedMesh != EarthSphere && pointerInfo.pickInfo.pickedMesh != EarthDisk ) {
+                    pointerDown(pointerInfo.pickInfo.pickedMesh)
+                }
+                
+				break;
+
+            //Al soltar el botón del ratón...
+			case BABYLON.PointerEventTypes.POINTERUP:
+                    pointerUp();
+				break;
+
+            //Al mover el ratón con el botón pulsado...
+			case BABYLON.PointerEventTypes.POINTERMOVE:          
+                    pointerMove();
+				break;
+
+
+            //Leve disminución de los tamaños de las
+            //esferas roja y azul al aumentar el zoom
+            //al máximo sobre la esfera de La Tierra
+            //(experimental)
+            case BABYLON.PointerEventTypes.POINTERWHEEL:
+                if (camera.radius<2.75*r && pointerInfo.event.wheelDelta>0) {
+                    redSphere.scaling=new BABYLON.Vector3(0.5,0.5,0.5);
+                    blueSphere.scaling=new BABYLON.Vector3(0.5,0.5,0.5);
+                } else {
+                    redSphere.scaling=new BABYLON.Vector3(1,1,1);
+                    blueSphere.scaling=new BABYLON.Vector3(1,1,1);
+                }
+                break;    
+        }
+
+    });
+
+
+    var update_all=function() {
+
+        //Cálculo de las líneas
+        //en función de las posiciones
+        calculate_lines();
+
+        //Actuliza las posiciones de las esferas
+        //roja y azul sobre la tierra plana
+        redSphere_fe.position=line_data_fe[0];
+        blueSphere_fe.position=line_data_fe[ndiv];
+
+        pos3=redSphere_fe.position;
+        pos4=blueSphere_fe.position;
+
+
+        //Control de distancias absurdas sobre la tierra plana
+        if (distancia_fe_suma!=0) {
+            var dofe_opt=("00"+(Math.round(distancia_fe_suma)).toString()).slice(-5);
+        } else {
+            var dofe_opt="  N/A";
+        }
+
+        if (distancia_fe_lox_suma!=0) {
+            var dlfe_opt=("00"+(Math.round(distancia_fe_lox_suma)).toString()).slice(-5);
+        } else {
+            var dlfe_opt="  N/A";
+        }
+        
+        //Actualización de distancias en GUI
+         data_text_1.text="            ~ DISTANCES(km)\n"+
+                     "\n"+
+                     " ORTHODROMIC  "+ ("00"+(Math.round(distancia_sp)).toString()).slice(-5) + "   "
+                                    + dofe_opt + "\n"+
+                     " LOXODROMIC   "+ ("00"+(Math.round(distancia_sp_lox_suma)).toString()).slice(-5) + "   "
+                                    + dlfe_opt + "\n"+
+                     " FLATODROMIC  "+ ("00"+(Math.round(distancia_sp_flat_suma)).toString()).slice(-5) + "   "
+                                    + ("00"+(Math.round(distancia_fe_flat_suma)).toString()).slice(-5) + "\n"+
+                     " EQUIANGULAR  "+ ("00"+(Math.round(distancia_sp_eqac_suma)).toString()).slice(-5) + "   "
+                                    + ("00"+(Math.round(distancia_fe_eqac_suma)).toString()).slice(-5);
+               
+
+        //Destrucción de la ortodrómica sobre la esfera
+        ortodromic_line.dispose();
+        //Creación de la ortodrómica sobre la esfera
+        ortodromic_line =BABYLON.Mesh.CreateLines ( "ortodromic_line", line_data,scene,true); 
+        ortodromic_line.color = line_color_orto;
+        ortodromic_line.isVisible=orto_es_visible;
+
+        //Destrucción de la ortodrómica proyectada 
+        //sobre la tierra plana
+        ortodromic_line_fe.dispose();
+        //Creación de la ortodrómica proyectada 
+        //sobre la tierra plana
+        ortodromic_line_fe =BABYLON.Mesh.CreateLines ( "ortodromic_line_fe", line_data_fe,scene,true); 
+        ortodromic_line_fe.color = line_color_orto;
+        ortodromic_line_fe.isVisible=orto_es_visible;
+
+        //Destrucción de la línea loxodrómica sobre la esfera
+        loxodromic_line.dispose();
+        //Creación de línea loxodrómica sobre la esfera
+        loxodromic_line =BABYLON.Mesh.CreateLines ( "loxodromic_line", line_data_lox,scene,true); 
+        loxodromic_line.color = line_color_loxo;
+        loxodromic_line.isVisible=loxo_es_visible;
+
+        //Destrucción de la línea loxodrómica
+        //proyectada sobre la tierra plana
+        loxodromic_line_fe.dispose();
+        //Creación de la línea loxodrómica proyectada sobre la tierra plana
+        loxodromic_line_fe =BABYLON.Mesh.CreateLines ( "loxodromic_line", line_data_lox_fe,scene,true); 
+        loxodromic_line_fe.color = line_color_loxo;
+        loxodromic_line_fe.isVisible=loxo_es_visible;
+
+        //Destrucción de la línea flatodrómica
+        //Sobre la tierra plana
+        flatodromic_line_fe.dispose();
+        //Creación de la línea flatodromica sobre la tierra plana
+        flatodromic_line_fe =BABYLON.Mesh.CreateLines ( "flatodromic_line", line_data_flat_fe,scene,true); 
+        flatodromic_line_fe.color = line_color_flat;
+        flatodromic_line_fe.isVisible=flato_es_visible;
+
+        //Destrucción de la línea flatodrómica
+        //sobre la esfera
+        flatodromic_line_sp.dispose();
+        //Creación de la línea flatodromica sobre la esfera
+        flatodromic_line_sp =BABYLON.Mesh.CreateLines ( "flatodromic_line", line_data_flat_sp,scene,true); 
+        flatodromic_line_sp.color = line_color_flat;
+        flatodromic_line_sp.isVisible=flato_es_visible;
+
+        //Destrucción de la línea equiangular
+        //Sobre la tierra plana
+        equiangular_line_fe.dispose();
+        //Creación de la línea equiangular sobre la tierra plana
+        equiangular_line_fe =BABYLON.Mesh.CreateLines ( "equiangular_line", line_data_eqac_fe,scene,true); 
+        equiangular_line_fe.color = line_color_eqac;
+        equiangular_line_fe.isVisible=eqac_es_visible;
+
+        //Destrucción de la línea equiangular
+        //Sobre la esfera
+        equiangular_line_sp.dispose();
+        //Creación de la línea equiangular sobre la esfera
+        equiangular_line_sp =BABYLON.Mesh.CreateLines ( "equiangular_line", line_data_eqac_sp,scene,true); 
+        equiangular_line_sp.color = line_color_eqac;
+        equiangular_line_sp.isVisible=eqac_es_visible;
+
+       
+        //Si las posiciones de las esferas han cambiado
+        //y está seleccionada alguna de las casillas
+        //de información
+        if (change_pos==1 && info_orto+info_loxo+info_flat+info_eqac>0) {
+
+
+            //Hace visible el cuadro de
+            //información y cambia el color
+            //del contorno a gris
+            info_rect.isVisible=1;
+            info_rect.color="gray";
+
+            var slat1="";
+            if (lat1>=0) slat1="+";
+            var slat2="";
+            if (lat2>=0) slat2="+";
+
+            var slon1="";
+            if (lon1>=0) slon1="+";
+            var slon2="";
+            if (lon2>=0) slon2="+";
+
+            //Cambia el resaltado 
+            //del cuadro de información
+            red_mark.height="32px";
+            red_mark.top="5px";
+            red_mark.left="5px";
+
+            blue_mark.height="32px";
+            blue_mark.top="40px";
+            blue_mark.left="5px";
+
+
+            //Presenta información de
+            //latitud y longitud
+            info_text_1.text= ""+
+                              " Red Lat:  "+ slat1 +(Math.round(lat1/dtor*10)/10) +"º\n"+
+                              " Red Lon:  "+ slon1 +(Math.round(lon1/dtor*10)/10) +"º\n"+
+                              " Blue Lat: "+ slat2 +(Math.round(lat2/dtor*10)/10) +"º\n"+
+                              " Blue Lon: "+ slon2 +(Math.round(lon2/dtor*10)/10) +"º\n";
+            
+            change_pos=0;
+
+        } else {
+
+           info_rect.isVisible=0;
+
+        }
+
+    }
+
+
+    return scene;
+};
+                window.initFunction = async function() {
+                    
+                    
+                    var asyncEngineCreation = async function() {
+                        try {
+                        return createDefaultEngine();
+                        } catch(e) {
+                        console.log("the available createEngine function failed. Creating the default engine instead");
+                        return createDefaultEngine();
+                        }
+                    }
+
+                    window.engine = await asyncEngineCreation();
+        if (!engine) throw 'engine should not be null.';
+        startRenderLoop(engine, canvas);
+        window.scene = createScene();};
+        initFunction().then(() => {sceneToRender = scene                    
+        });
+
+        // Resize
+        window.addEventListener("resize", function () {
+            engine.resize();
+        });
+    </script>
+</body>
+</html>
