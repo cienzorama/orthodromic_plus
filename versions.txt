@@ -11,7 +11,7 @@ https://www.babylonjs-playground.com/#7FCEBB#1
 
 https://www.babylonjs-playground.com/#5HBTHP#45
 
-https://www.babylonjs-playground.com/#SWA6QD
+https://www.babylonjs-playground.com/#SWA6QD#3
 //----------------------------------------------
 
 
@@ -21,11 +21,14 @@ https://www.babylonjs-playground.com/#SWA6QD
 //------------------------------------------
 
 
-//-----------------orbit view-------------------
-//https://www.babylonjs-playground.com/#LT1GZ6#19
-//----------------------------------------------
-
-
 //----------------orbit view-pod-------------
 //https://babylonjs-playground.com/#X9XBJC#37
 //-------------------------------------------
+
+
+//-----------------orbit view-------------------
+//https://www.babylonjs-playground.com/#LT1GZ6#21
+//----------------------------------------------
+
+
+
